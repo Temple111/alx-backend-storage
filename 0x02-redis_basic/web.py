@@ -1,34 +1,29 @@
 #!/usr/bin/env python3
-"""
-Implements an expiring web cache and tracker
-"""
-from typing import Callable
-from functools import wraps
+"""Module tracks how many times a particular URL was accessed"""
 import redis
 import requests
-redis_client = redis.Redis()
+from typing import Callable
+from functools import wraps
 
 
-def url_count(method: Callable) -> Callable:
-    """counts how many times an url is accessed"""
+def count(method: Callable):
+    '''track how many times a particular URL was accessed'''
+    r = redis.Redis()
+
     @wraps(method)
-    def wrapper(*args, **kwargs):
-        url = args[0]
-        redis_client.incr(f"count:{url}")
-        cached = redis_client.get(f'{url}')
-        if cached:
-            return cached.decode('utf-8')
-        redis_client.setex(f'{url}, 10, {method(url)}')
-        return method(*args, **kwargs)
+    def wrapper(url):
+        '''wrap the decorated function and return the wrapper'''
+        r.incr(f"count:{url}")
+        exp_count = r.get(f"cached:{url}")
+        if exp_count:
+            return exp_count.decode('utf-8')
+        html = method(url)
+        r.setex(f"cached:{url}", 10, html)
+        return html
     return wrapper
 
 
-@url_count
+@count
 def get_page(url: str) -> str:
-    """get a page and cache value"""
-    response = requests.get(url)
-    return response.text
-
-
-if __name__ == "__main__":
-    get_page('http://slowwly.robertomurray.co.uk')
+    '''uses the requests module to obtain the HTML content'''
+    return requests.get(url).text
